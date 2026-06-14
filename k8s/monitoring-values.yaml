@@ -1,0 +1,50 @@
+prometheus:
+  prometheusSpec:
+    image:
+      registry: swr.cn-north-4.myhuaweicloud.com
+      repository: cloud-course-2023112435/prometheus
+      tag: v3.11.2
+
+alertmanager:
+  alertmanagerSpec:
+    image:
+      registry: swr.cn-north-4.myhuaweicloud.com
+      repository: cloud-course-2023112435/alertmanager
+      tag: v0.32.0
+
+prometheusOperator:
+  image:
+    registry: swr.cn-north-4.myhuaweicloud.com
+    repository: cloud-course-2023112435/prometheus-operator
+    tag: v0.90.1
+  prometheusConfigReloader:
+    image:
+      registry: swr.cn-north-4.myhuaweicloud.com
+      repository: cloud-course-2023112435/prometheus-config-reloader
+      tag: v0.90.1
+  admissionWebhooks:
+    patch:
+      image:
+        registry: swr.cn-north-4.myhuaweicloud.com
+        repository: cloud-course-2023112435/kube-webhook-certgen
+        tag: "1.8.1"
+
+grafana:
+  image:
+    registry: swr.cn-north-4.myhuaweicloud.com
+    repository: cloud-course-2023112435/grafana
+    tag: "12.4.3"
+  sidecar:
+    dashboards:
+      enabled: false
+    datasources:
+      enabled: false
+
+prometheus-node-exporter:
+  image:
+    registry: swr.cn-north-4.myhuaweicloud.com
+    repository: cloud-course-2023112435/node-exporter
+    tag: v1.11.1
+
+kubeStateMetrics:
+  enabled: false
