@@ -1,0 +1,336 @@
+=== 第1页 ===
+云计算技术课程设计  · 问题合集  
+姓名： Shetoll ｜学号： 2025212245
+第一部分： K8s 基础  
+问题 1： docker compose up 网络超时，无法拉取镜像  
+现象：执行  docker compose up --build 报错，提示连接超时。
+原因：国内网络无法直连  Docker Hub 。
+解决方法 ：在  Docker Desktop →  Settings →  Docker Engine 中添加国内镜像源：
+问题 2：推送镜像到  SWR 报错  Invalid image, fail to parse 
+'manifest.json' 
+现象：所有层推送成功，但最终报  manifest 解析错误。
+原因：Docker 29.x 默认生成  OCI 格式  manifest ，华为云  SWR 仅支持经典  Docker 格式。
+解决方法 ：构建时加  --provenance=false 参数：
+问题 3： CCE 集群节点资源不足（ Insufficient memory ）  
+现象：新  Pod 持续  Pending ， describe 显示  Insufficient memory。
+原因：2 个  c7.large.2 （ 4GiB ）节点实际可调度内存约  2.4GiB/ 节点，系统  Pod 占用较多，应用  Pod 叠加后空间
+不足。
+解决方法 ：向集群添加第 3 个节点（ 2 vCPU / 8 GiB ）， metrics-server 和应用  Pod 调度恢复正常。{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://huecker.io",
+    "https://dockerhub.timeweb.cloud"
+  ]
+}1
+2
+3
+4
+5
+6
+7
+docker build --provenance =false -t <镜像地址 > . 1
+
+
+=== 第2页 ===
+问题 4：跨  Region 拉取  SWR 镜像失败（ ImagePullBackOff ）  
+现象：CCE 集群在  cn-east-3 ，镜像存储在  cn-north-4 SWR ， Pod 启动报  ImagePullBackOff 。
+原因：K8s 节点拉取私有镜像需要认证，跨  Region 访问需要  imagePullSecret 。
+解决方法 ：
+1. 在 cn-east-3 SWR 创建同名组织并重新推送镜像
+2. 创建  imagePullSecret ：
+3. 在 Deployment 中引用该  Secret
+问题 5： ConfigMap subPath 挂载不支持热更新  
+现象：修改  ConfigMap 后， Pod 内文件不自动同步。
+原因：Kubernetes 已知限制 —— 使用  subPath 挂载时， ConfigMap 更新不会自动传播到  Pod 。
+解决方法 ：修改  ConfigMap 后手动删除  Pod ，让  Deployment 重建  Pod 读取最新配置。
+第二部分方向 A ： Apache Spark  
+问题 6： Spark Operator 镜像无法拉取（ ghcr.io 被封）  
+现象：Helm 安装  spark-operator 后， controller 和  webhook Pod 持续  ErrImagePull ，镜像地址为  
+ghcr.io/kubeflow/spark-operator/controller:2.5.0。
+原因：国内环境无法访问  GitHub Container Registry （ ghcr.io ）。
+解决方法 ：
+1. 本地开启  VPN ，docker pull ghcr.io/kubeflow/spark-operator/controller:2.5.0
+2. 重新打  tag 推送到华为云  SWR ：
+3. Helm 重装时通过  --set 覆盖镜像地址：kubectl create secret docker-registry swr-secret \
+  --docker-server =swr.cn-east-3.myhuaweicloud.com \
+  --docker-username =cn-east-3@<AK> \
+  --docker-password =<SK>1
+2
+3
+4
+docker tag ghcr.io/kubeflow/spark-operator/controller:2.5.0 \
+  swr.cn-east-3.myhuaweicloud.com/cloud-course-2025212245/spark-operator:2.5.0
+docker push swr.cn-east-3.myhuaweicloud.com/cloud-course-2025212245/spark-
+operator:2.5.01
+2
+3
+
+
+=== 第3页 ===
+问题 7： Spark executor Pod 因资源不足无法调度（ FailedScheduling ）  
+现象：SparkApplication 提交后  driver 正常运行， executor Pod 持续  Pending ，describe 显示：
+原因分析 ：
+kubectl top nodes 显示节点实际  CPU 使用率仅  2-3% ，但调度器依据的是 资源请求（ requests ）而非
+实际用量
+大节点（ 2vCPU/8GiB ） CPU 请求已达  90% （ 1755m/1950m ），仅剩约  195m 空闲
+executor 默认请求  1 核（ 1000m ） CPU ，无法调度到任何节点
+解决方法（分两步） ：
+第一步：临时缩容现有应用，释放内存压力：
+第二步：在  SparkApplication executor 配置中，用  coreRequest 将 Kubernetes CPU 请求与  Spark 逻辑核心
+数解耦：
+验证：executor Pod 成功  Running ，作业输出：helm install spark-op spark-operator/spark-operator \
+  --set controller.image.repository =swr.cn-east-3.myhuaweicloud.com/cloud-
+course-2025212245/spark-operator \
+  --set controller.image.tag = 2.5.0 \
+  --set webhook.image.repository =swr.cn-east-3.myhuaweicloud.com/cloud-course-
+2025212245/spark-operator \
+  --set webhook.image.tag = 2.5.01
+2
+3
+4
+5
+0/3 nodes are available: 1 Insufficient cpu, 2 Insufficient memory 1
+kubectl scale deployment frontend --replicas = 0
+kubectl scale deployment backend --replicas = 0
+kubectl scale deployment redis --replicas = 01
+2
+3
+executor:
+  cores: 1           # Spark 内部仍按  1 核调度任务
+  coreRequest: "100m"  # Kubernetes 仅预留  100m CPU ，匹配节点剩余  195m
+  instances: 1
+  memory: "512m"
+  memoryOverhead: "128m"1
+2
+3
+4
+5
+6
+Top 10 words: [('spark', 8), ('hello', 7), ('data', 4), ...] 1
+
+
+=== 第4页 ===
+第二部分方向 B ： MPI on K8s  
+问题 8：构建  mpi4py 镜像时无法拉取  python:3.9-slim 基础镜像  
+现象：执行  docker build 时卡在第一步，拉取  python:3.9-slim 超时或失败。
+原因：国内网络无法直连  Docker Hub ，基础镜像拉取被墙。
+解决方法 ：与问题 1 相同，在  Docker Desktop →  Settings →  Docker Engine 中添加国内镜像源：
+配置后重启  Docker Desktop ，python:3.9-slim 可正常拉取。
+问题 9： mpi-operator Pod 镜像  ImagePullBackOff  
+现象：kubectl apply -f mpi-operator.yaml 后， mpi-operator Pod 持续  ErrImagePull ，镜像为  
+mpioperator/mpi-operator:master。
+原因：CCE 集群节点无法访问  Docker Hub 。
+解决方法 ：本地拉取后推送到  SWR ，修改  Deployment 镜像地址：
+问题 10： Worker Pod StartError （ /usr/sbin/sshd not found ）  
+现象：MPIJob Worker Pod 报  StartError ， describe 显示  exec: "/usr/sbin/sshd": no such file or 
+directory。
+原因：MPI Operator 要求  Worker 容器内有  sshd ，用于  Launcher 与  Worker 之间的  SSH 通信。自建镜像未安
+装 openssh-server 。
+解决方法 ：Dockerfile 中增加  openssh-server openssh-client 并创建  /var/run/sshd 目录，重建镜像。{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://huecker.io",
+    "https://dockerhub.timeweb.cloud"
+  ]
+}1
+2
+3
+4
+5
+6
+7
+docker pull mpioperator/mpi-operator:master
+docker tag mpioperator/mpi-operator:master swr.cn-east-3.myhuaweicloud.com/cloud-course-
+2025212245/mpi-operator:master
+docker push swr.cn-east-3.myhuaweicloud.com/cloud-course-2025212245/mpi-operator:master
+# SWR 控制台设为公开
+kubectl set image deployment/mpi-operator mpi-operator =swr.cn-east-
+3.myhuaweicloud.com/cloud-course-2025212245/mpi-operator:master -n mpi-operator1
+2
+3
+4
+5
+
+
+=== 第5页 ===
+问题 11： MPIJob apiVersion 不匹配  
+现象：kubectl apply -f mpijob.yaml 报错  no matches for kind "MPIJob" in version 
+"kubeflow.org/v1"。
+原因：mpi-operator v0.4.0 的  CRD 只注册了  v2beta1，YAML 中写的是  kubeflow.org/v1。
+解决方法 ：将所有  MPIJob YAML 的  apiVersion 改为  kubeflow.org/v2beta1。
+附加题 1：监控系统  
+问题 12： kube-prometheus-stack 安装时  admission-create Job 镜像拉取
+失败（ ImagePullBackOff ） 
+现象：执行  helm upgrade --install monitoring 后，monitoring-kube-prometheus-admission-
+create-* Pod 持续  ImagePullBackOff / ErrImagePull。
+原因：kube-prometheus-stack 的 webhook 证书生成  Job 默认使用  ghcr.io/jkroepke/kube-webhook-
+certgen:1.8.1，CCE 集群节点无法直接拉取  ghcr.io 镜像。
+解决方法 ：
+1. 本地拉取并推送到  SWR ：
+2. 在 monitoring-values.yaml 中覆盖镜像地址：
+3. 重新执行  Helm 安装或升级：docker pull ghcr.io/jkroepke/kube-webhook-certgen:1.8.1
+docker tag ghcr.io/jkroepke/kube-webhook-certgen:1.8.1 swr.cn-east-
+3.myhuaweicloud.com/cloud-course-2025212245/kube-webhook-certgen:1.8.1
+docker push swr.cn-east-3.myhuaweicloud.com/cloud-course-2025212245/kube-
+webhook-certgen:1.8.11
+2
+3
+prometheusOperator:
+  admissionWebhooks:
+    patch:
+      image:
+        registry: swr.cn-east-3.myhuaweicloud.com
+        repository: cloud-course-2025212245/kube-webhook-certgen
+        tag: "1.8.1"1
+2
+3
+4
+5
+6
+7
+helm upgrade --install monitoring ./kube-prometheus-stack -n monitoring -f 
+./monitoring-values.yaml1
+
+
+=== 第6页 ===
+问题 13： Prometheus 主容器仍然从  quay.io 拉取镜像，导致  
+ImagePullBackOff 
+现象：prometheus-monitoring-kube-prometheus-prometheus-0 中 config-reloader 正常运行，但主容
+器 prometheus 持续  ImagePullBackOff，describe 显示仍在拉取  
+quay.io/prometheus/prometheus:v3.11.2。
+原因：只覆盖了表层的  prometheus.image 字段，没有覆盖到  prometheus.prometheusSpec.image 或 
+Operator 默认的  Prometheus 基础镜像配置，导致  StatefulSet 仍使用默认镜像地址。
+解决方法 ：
+1. 在 monitoring-values.yaml 中增加：
+2. 重新执行  Helm 升级并删除失败的  Prometheus Pod
+问题 14：kube-state-metrics 镜像在  SWR 中不可用  
+现象：monitoring-kube-state-metrics-* 持续  ErrImagePull，describe 显示  SWR 中  kube-state-
+metrics:v2.18.0 不存在。
+原因：前期镜像同步异常， SWR 中对应  tag 实际不可拉取。
+解决方法 ：
+1. 由于附加题 1 只要求节点  CPU 图和  Pod 内存图，这两项不依赖  kube-state-metrics
+2. 在 monitoring-values.yaml 中关闭该组件：
+3. 重新执行  Helm 升级，保留核心监控组件继续验收prometheus:
+  prometheusSpec:
+    image:
+      registry: swr.cn-east-3.myhuaweicloud.com
+      repository: cloud-course-2025212245/prometheus
+      tag: "v3.11.2"
+prometheusOperator:
+  prometheusDefaultBaseImage: cloud-course-2025212245/prometheus
+  prometheusDefaultBaseImageRegistry: swr.cn-east-3.myhuaweicloud.com1
+2
+3
+4
+5
+6
+7
+8
+9
+1 0
+kubeStateMetrics:
+  enabled: false1
+2
+
+
+=== 第7页 ===
+附加题 2： CI/CD 流水线  
+问题 15： GitHub Actions 流水线  4 秒失败（ Secrets 未配置）  
+现象：推送代码后  Actions 自动触发， Login to SWR 步骤  4 秒内失败，日志显示  -u cn-east-3@ / -p（密
+码为空）。
+原因：.github/workflows/deploy.yml 引用了  ${{ secrets.SWR_AK }} 和 ${{ secrets.SWR_SK }}，但
+仓库  Settings →  Secrets 中尚未添加这两个值。
+解决方法 ：GitHub 仓库  →  Settings →  Secrets and variables →  Actions →  New repository secret ，分别添加  
+SWR_AK（华为云  AK ）、SWR_SK（SWR 临时登录密钥）、 KUBE_CONFIG（base64 编码的  kubeconfig ）。
+问题 16： SWR 登录报  Authenticate Error  
+现象：Secrets 配置后重新触发， Login to SWR 步骤仍报  Authenticate Error。
+原因：SWR_SK 填写的是  IAM 账号的永久  SK ，而华为云  SWR 的  docker login 需要使用  SWR 临时登录密钥 （24 
+小时有效），两者不同。
+解决方法 ：进入  SWR 控制台  →  右上角 " 登录指令 " →  复制其中  -p 后面的临时  Token ，更新  GitHub Secrets 中
+的 SWR_SK。
+问题 17： git push 报  SSL/TLS 连接失败  
+现象：本地执行  git push origin main 报错：
+原因：国内网络无法直连  GitHub HTTPS 接口。
+解决方法 ：切换为  SSH 推送：
+（需提前在  GitHub 账号  Settings →  SSH Keys 中添加本机公钥）
+附加题 3-C2 ： PyTorch DDP on K8s  
+问题 18： pytorch-mpi:v1 镜像  ImagePullBackOff （ SWR 未设公开）  
+现象：kubectl apply MPIJob 后， Worker Pod 持续  ImagePullBackOff，describe 显示：fatal: unable to access 'https://github.com/...': SSL connection timeout 1
+git remote set-url origin git@github.com:WTXuGit/cloud-course-design.git
+git push origin main1
+2
+Failed to pull image "swr.cn-east-3.myhuaweicloud.com/cloud-course-2025212245/pytorch-
+mpi:v1":
+pulling from host swr.cn-east-3.myhuaweicloud.com failed with status code 401 
+Unauthorized1
+2
+
+
+=== 第8页 ===
+原因：镜像推送到  SWR 后默认为 私有，CCE Worker 节点拉取时没有凭据，返回  401 。
+解决方法 ：进入  SWR 控制台  →  找到  pytorch-mpi:v1 → 编辑  →  类型改为 公开。之后  Pod 可自动重新拉取镜
+像恢复正常。
+附加题 3-C3 ： K3s + MQTT  
+问题 20： daocloud 镜像源  401 导致基础镜像拉取失败  
+现象：构建  mqtt-pub/sub 镜像时， FROM python:3.9-slim 报错：
+原因：daocloud 镜像源对  python:3.9-slim 鉴权策略变更，原来配置的镜像源失效。
+解决方法 ：改用已推送到  SWR 的  mpi4py:latest 作为基础镜像（其底层本身就是  python:3.9-slim ），完全绕
+过 Docker Hub ：
+问题 21： CCE Pod 出方向连接外部  MQTT Broker 被安全策略拦截  
+现象：CCE 中的  mqtt-subscriber Pod 连接  broker.emqx.io:1883 和 broker.emqx.io:8883 均报  
+socket.timeout: timed out，添加安全组出方向  1883 规则后仍无效。
+原因：华为云  CCE 集群出方向流量受  VPC ACL 或更底层的网络策略限制， 1883/8883 端口被静默丢弃，安全组
+规则不足以覆盖所有层级的过滤。
+解决方法 ：在  CCE 内部自建  Mosquitto Broker ，完全绕过出方向防火墙：
+订阅者连接  mosquitto-svc:1883（ClusterIP ，内部通信，无防火墙限制）
+K3s 传感器连接  mosquitto-lb 的 ELB 公网  IP （入方向流量，不受出方向限制）
+关键  Mosquitto 配置（ ConfigMap ）：
+问题 22： mqtt-pub:v2 镜像中  BROKER_HOST 环境变量未生效  
+现象：sensor-pod.yaml 中配置了  BROKER_HOST=115.175.46.1，但  Pod 日志显示：
+说明  Pod 仍连接旧地址，数据无法写入  CCE 内  Redis 。unexpected status from HEAD request to 
+https://docker.m.daocloud.io/v2/library/python/manifests/3.9-slim: 401 Unauthorized1
+FROM swr.cn-east-3.myhuaweicloud.com/cloud-course-2025212245/mpi4py:latest 1
+listener 1883
+allow_anonymous true1
+2
+[Publisher] Connected to broker.emqx.io:8883 1
+
+
+=== 第9页 ===
+原因：mqtt-pub:v2 镜像是在代码改用  os.environ.get("BROKER_HOST") 之前构建的，镜像中硬编码了  
+broker.emqx.io:8883，YAML 中设置的环境变量无法覆盖镜像内的常量。
+解决方法 ：重新构建  mqtt-pub:v3 （代码已改为读取环境变量），推送后更新  sensor-pod.yaml 镜像  tag 。
+问题 23： K3s Pod 持续  ContainerCreating （ rancher/mirrored-
+pause:3.6 拉取失败） 
+现象：K3s VM 上  kubectl apply Pod 后长时间  ContainerCreating ，describe 显示：
+原因：K3s 创建  Pod Sandbox 时需要拉取  rancher/mirrored-pause:3.6 基础镜像，该镜像位于  Docker  
+Hub， Ubuntu VM 网络无法直连。
+解决方法 ：配置  K3s 使用国内镜像源：
+问题 24： K3s VM 上  kubectl 默认指向  minikube 而非  K3s  
+现象：在  Ubuntu VM 上直接执行  kubectl 报错：
+192.168.49.2 是 minikube 的默认  API Server 地址。
+原因：该  VM 曾安装过  minikube ，~/.kube/config 指向  minikube 集群，而  K3s 的  kubeconfig 在  
+/etc/rancher/k3s/k3s.yaml（仅  root 可读）。
+解决方法 ：所有  K3s 操作需显式指定  kubeconfig ：failed to pull image "docker.io/rancher/mirrored-pause:3.6": failed to resolve 
+reference: 
+dial tcp 45.77.186.255:443: connect: connection refused1
+2
+sudo tee /etc/rancher/k3s/registries.yaml > /dev/null << 'EOF'
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://docker.m.daocloud.io"
+      - "https://hub-mirror.c.163.com"
+EOF
+sudo systemctl restart k3s1
+2
+3
+4
+5
+6
+7
+8
+dial tcp 192.168.49.2:8443: connect: no route to host 1
+sudo KUBECONFIG =/etc/rancher/k3s/k3s.yaml kubectl <command> 1
+
+

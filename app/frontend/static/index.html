@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>云计算课程设计 - 豆瓣电影分析</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .info { color: #666; margin: 10px 0; }
+        .student { color: #e67e22; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>云计算技术课程设计</h1>
+        <p class="info">Cloud Computing Technologies — Course Project</p>
+        <hr>
+        <!-- ⚠️ 请替换为你的真实学号和姓名（用于答辩识别） -->
+        <p class="student">学号：2023112435
+        <p class="student">姓名：聂泽熙
+        <hr>
+        <p>应用状态：<span id="status">检查中...</span></p>
+        <p>访问计数：<span id="counter">-</span></p>
+    </div>
+    <script>
+        // 检查后端连通性
+        fetch('/api/ping')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('status').textContent =
+                    data.status === 'ok' ? '✅ 后端连接正常' : '⚠️ 异常';
+            })
+            .catch(() => {
+                document.getElementById('status').textContent = '❌ 后端连接失败';
+            });
+
+        fetch('/api/counter')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('counter').textContent = data.visit_count || '-';
+            })
+            .catch(() => {});
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# 云计算课程设计 - 本地开发环境依赖
+# 用于本地调试 Spark 分析脚本和 Flask 应用
+
+# Flask 后端
+flask==3.0.0
+redis==5.0.1
+
+# Spark 分析（本地 PySpark）
+pyspark==3.4.0
+pandas==2.1.4
+
+# 性能对比图绘制
+matplotlib==3.8.0
+numpy==1.26.0

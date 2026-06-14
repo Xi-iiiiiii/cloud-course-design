@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+
+# Docker / K8s
+*.tar
+*.tgz
+*.7z
+
+# Large files
+douban_movies.csv
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+~$*
+*.tmp
+
+# Offline packages
+云计算课程设计_离线资源包*/
+附加题软件包/
